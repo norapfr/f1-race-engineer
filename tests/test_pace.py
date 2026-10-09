@@ -36,3 +36,14 @@ def test_wet_race_and_too_few_clean_laps_are_nan():
     d.loc[(d.driver_id == "b") & (d.lap_number > 6), "track_status"] = "4"   # solo 4 vueltas limpias
     out = race_pace_table(d).set_index("driver_id")
     assert np.isnan(out.loc["b", "race_pace_pct"]) and not np.isnan(out.loc["a", "race_pace_pct"])
+
+
+
+
+def test_mixed_conditions_race_is_excluded_but_a_few_wet_laps_are_not():
+    mixed = laps()
+    mixed.loc[(mixed.driver_id == "a") & mixed.lap_number.between(2, 9), "compound"] = "INTERMEDIATE"   # 8/180 = 4.4%
+    assert race_pace_table(mixed)["race_pace_pct"].isna().all()
+    almost_dry = laps()
+    almost_dry.loc[(almost_dry.driver_id == "a") & almost_dry.lap_number.between(2, 5), "compound"] = "INTERMEDIATE"  # 2.2%
+    assert race_pace_table(almost_dry)["race_pace_pct"].notna().any()

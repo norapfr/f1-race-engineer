@@ -6,7 +6,7 @@ import pandas as pd
 
 MIN_FIELD = 5          # mínimo de pilotos con vuelta limpia en una vuelta para usar su mediana como referencia
 MIN_CLEAN_LAPS = 10    # mínimo de vueltas limpias de un piloto para fiarse de su ritmo
-WET_SHARE = 0.2        # carrera "mojada" si >= 20% de las vueltas son con intermedios/lluvia
+WET_SHARE = 0.03        # carrera "mojada" si >= 3% de las vueltas son con intermedios/lluvia
 MAX_REL_PCT = 7.0      # descarta vueltas más de un 7% fuera de la mediana del campo
 WET = {"INTERMEDIATE", "WET"}
 

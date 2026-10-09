@@ -1,5 +1,5 @@
 """Predice una carrera FUTURA a partir de su clasificación ya disputada.
-Uso: python -m pipelines.predict_upcoming 17 [--season 2026] [--grid-file parrilla.csv] [--db data/f1.duckdb]
+Uso: python -m pipelines.predict_upcoming 17 [--season 2026] [--grid-file parrilla.csv] [--why] [--db data/f1.duckdb]
 Antes, actualiza la base con las últimas carreras (ver README)."""
 from __future__ import annotations
 import argparse
@@ -18,6 +18,7 @@ def main() -> None:
     ap.add_argument("--season", type=int)
     ap.add_argument("--db", default="data/f1.duckdb")
     ap.add_argument("--grid-file", help="CSV driver_id,grid con la parrilla real (penalizaciones, pit lane = 0)")
+    ap.add_argument("--why", action="store_true", help="explica los factores de los 6 favoritos")
     a = ap.parse_args()
     con = connect(a.db)
     season = a.season or con.execute("select max(season) from clean.races").fetchone()[0]
@@ -39,7 +40,8 @@ def main() -> None:
     raw = load_raw(con)
     if (raw["race_id"] == race_id).any():
         sys.exit(f"{race_id} ya tiene resultados en la base: usa pipelines.predict_race.")
-    pred = predict_race(build_features(pd.concat([raw, up], ignore_index=True)), race_id)
+    df = build_features(pd.concat([raw, up], ignore_index=True))
+    pred = predict_race(df, race_id)
     names = con.execute("select driver_id, name from clean.drivers").df()
     teams = con.execute("select team_id, name as equipo from clean.teams").df()
     out = pred.merge(names, on="driver_id", how="left").merge(teams, on="team_id", how="left")
@@ -53,6 +55,13 @@ def main() -> None:
     print(out[["name", "equipo", "grid_eff", "p_win", "p_podium", "p_top5", "p_top10", "exp_finish"]]
           .rename(columns={"name": "piloto", "grid_eff": "parrilla"}).to_string(index=False))
     print(f"\nSuma P(win) = {pred['p_win'].sum():.2f}; suma P(podio) = {pred['p_podium'].sum():.2f}")
+    if a.why:
+        from models.explain import explain_groups, explain_race
+        pd.set_option("display.width", 250)
+        table = explain_groups(explain_race(df, race_id), out.set_index("driver_id")["name"], list(out["driver_id"].head(6)))
+        print("\nPor qué: efecto de cada grupo de factores sobre las probabilidades de ganar "
+                "(x = multiplica las probabilidades frente a un piloto medio):\n")
+        print(table.round(2).to_string(index=False))
 
 
 if __name__ == "__main__":
