@@ -1,0 +1,23 @@
+[project]
+name = "f1-race-engineer"
+version = "0.1.0"
+description = "F1 Race Engineer AI + Strategy Lab: probabilistic race prediction, Monte Carlo simulation and strategy decision support"
+requires-python = ">=3.10"
+dependencies = ["duckdb>=1.0", "pandas>=2.0", "pyarrow>=14", "requests>=2.31", "numpy>=1.26", "scikit-learn>=1.4", "lightgbm>=4.0"]
+[project.optional-dependencies]
+ingest = ["fastf1>=3.8"]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["ingestion", "features", "storage", "pipelines", "models", "simulation", "api", "ai"]
+
+[tool.setuptools.package-data]
+storage = ["schema.sql"]

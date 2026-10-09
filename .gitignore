@@ -1,0 +1,23 @@
+# Entorno y caché de Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Datos: se regeneran con los pipelines (son pesados y de terceros)
+data/raw/
+data/fastf1_cache/
+data/processed/
+data/features/
+*.duckdb
+*.duckdb.wal
+*.parquet
+
+# Editor y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
