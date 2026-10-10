@@ -43,3 +43,17 @@ def test_prediction_is_identical_whether_or_not_the_race_results_exist():
     hidden.loc[m, "finish_position"], hidden.loc[m, "points"] = np.nan, 0.0
     hidden.loc[m, "classified"], hidden.loc[m, "race_pace_pct"] = True, np.nan
     pd.testing.assert_frame_equal(full, predict_race(build_features(hidden), "2022_10"))
+
+
+
+def test_upcoming_rows_from_a_handwritten_table():
+    from features.upcoming import upcoming_rows_from_table
+    q = pd.DataFrame({"driver_id": ["a", "b", "c"], "position": [1, 2, np.nan], "q1": ["1:30.100", None, "1:31.000"]})
+    up = upcoming_rows_from_table(2026, 17, "marina_bay", q, {"a": "t1", "b": "t2", "c": "t3"}, {"b": 0})
+    assert up["driver_id"].tolist() == ["a", "b"] and up["team_id"].tolist() == ["t1", "t2"]   # c sin posición: no corre
+    assert up["grid"].tolist() == [1.0, 0.0] and np.isclose(up["q1_s"].iloc[0], 90.1) and np.isnan(up["q1_s"].iloc[1])
+    assert up["race_id"].iloc[0] == "2026_17" and up["circuit_id"].iloc[0] == "marina_bay"
+    with pytest.raises(ValueError):
+        upcoming_rows_from_table(2026, 17, "marina_bay", q, {"a": "t1"})            # piloto sin historial
+    with pytest.raises(NoQualifying):
+        upcoming_rows_from_table(2026, 17, "marina_bay", q.assign(position=np.nan), {"a": "t1", "b": "t2", "c": "t3"})

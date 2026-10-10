@@ -1,13 +1,13 @@
 """Predice una carrera FUTURA a partir de su clasificación ya disputada.
 Uso: python -m pipelines.predict_upcoming 17 [--season 2026] [--grid-file parrilla.csv] [--why] [--db data/f1.duckdb]
-Antes, actualiza la base con las últimas carreras (ver README)."""
+Sin conexión con la API: python -m pipelines.predict_upcoming 17 --quali-file quali.csv --circuit marina_bay
+(plantilla con: python -m pipelines.quali_template). Antes, actualiza la base con las últimas carreras (ver README)."""
 from __future__ import annotations
 import argparse
 import sys
 import pandas as pd
 from features.build import build_features, load_raw
-from features.upcoming import NoQualifying, load_grid_override, upcoming_rows
-from ingestion.jolpica import JolpicaClient, merge_race_pages
+from features.upcoming import NoQualifying, load_grid_override, upcoming_rows, upcoming_rows_from_table
 from models.predict import REFERENCE_MODEL, predict_race
 from storage.db import connect
 
@@ -18,6 +18,8 @@ def main() -> None:
     ap.add_argument("--season", type=int)
     ap.add_argument("--db", default="data/f1.duckdb")
     ap.add_argument("--grid-file", help="CSV driver_id,grid con la parrilla real (penalizaciones, pit lane = 0)")
+    ap.add_argument("--quali-file", help="CSV de clasificación escrito a mano (driver_id,position[,q1]); no usa la API")
+    ap.add_argument("--circuit", help="circuit_id de la carrera (obligatorio con --quali-file), p. ej. marina_bay")
     ap.add_argument("--why", action="store_true", help="explica los factores de los 6 favoritos")
     a = ap.parse_args()
     con = connect(a.db)
@@ -28,16 +30,33 @@ def main() -> None:
                  f"  python -m pipelines.ingest_results --from {season} --to {season} --force\n"
                  f"  python -m pipelines.ingest_fastf1 --from {season} --to {season}\n"
                  f"  python -m pipelines.build_pace {a.db}")
-    client = JolpicaClient()
-    info = merge_race_pages(client.paged(f"{season}/{a.round}"))
-    quali = merge_race_pages(client.paged(f"{season}/{a.round}/qualifying"), "QualifyingResults")
-    override = load_grid_override(a.grid_file) if a.grid_file else None
-    try:
-        up = upcoming_rows(info, quali, override)
-    except NoQualifying:
-        sys.exit("La clasificación de esta carrera todavía no está disponible. Vuelve a ejecutarlo cuando termine.")
-    race_id = up["race_id"].iloc[0]
     raw = load_raw(con)
+    override = load_grid_override(a.grid_file) if a.grid_file else None
+    if a.quali_file:
+        if not a.circuit:
+            sys.exit("Con --quali-file indica el circuito con --circuit (p. ej. marina_bay).")
+        last_team = raw.sort_values(["season", "round"]).groupby("driver_id")["team_id"].last().to_dict()
+        try:
+            up = upcoming_rows_from_table(season, a.round, a.circuit, pd.read_csv(a.quali_file), last_team, override)
+        except NoQualifying:
+            sys.exit("El archivo no tiene posiciones rellenadas en la columna 'position'.")
+        except ValueError as e:
+            sys.exit(str(e))
+        race_name = f"ronda {a.round} ({a.circuit})"
+    else:
+        from ingestion.jolpica import JolpicaClient, merge_race_pages
+        client = JolpicaClient()
+        info = merge_race_pages(client.paged(f"{season}/{a.round}"))
+        quali = merge_race_pages(client.paged(f"{season}/{a.round}/qualifying"), "QualifyingResults")
+        try:
+            up = upcoming_rows(info, quali, override)
+        except NoQualifying:
+            sys.exit("La clasificación de esta carrera todavía no está disponible. Vuelve a ejecutarlo cuando termine.")
+        race_name = info["MRData"]["RaceTable"]["Races"][0]["raceName"]
+    race_id = up["race_id"].iloc[0]
+    if up["circuit_id"].iloc[0] not in set(raw["circuit_id"]):
+        print(f"Aviso: no hay carreras previas en el circuito '{up['circuit_id'].iloc[0]}' en la base; "
+              "si no es un circuito nuevo, revisa el nombre (--circuit).")
     if (raw["race_id"] == race_id).any():
         sys.exit(f"{race_id} ya tiene resultados en la base: usa pipelines.predict_race.")
     df = build_features(pd.concat([raw, up], ignore_index=True))
@@ -49,9 +68,8 @@ def main() -> None:
     for c in ("p_win", "p_podium", "p_top5", "p_top10"):
         out[c] = (100 * out[c]).round(1)
     out["exp_finish"] = out["exp_finish"].round(1)
-    race_name = info["MRData"]["RaceTable"]["Races"][0]["raceName"]
-    print(f"\n{race_id} — {race_name} (modelo: {REFERENCE_MODEL}; probabilidades en %; parrilla = "
-          f"{'archivo' if override else 'clasificación, sin penalizaciones'})\n")
+    src = "archivo de parrilla" if override else "clasificación, sin penalizaciones"
+    print(f"\n{race_id} — {race_name} (modelo: {REFERENCE_MODEL}; probabilidades en %; parrilla = {src})\n")
     print(out[["name", "equipo", "grid_eff", "p_win", "p_podium", "p_top5", "p_top10", "exp_finish"]]
           .rename(columns={"name": "piloto", "grid_eff": "parrilla"}).to_string(index=False))
     print(f"\nSuma P(win) = {pred['p_win'].sum():.2f}; suma P(podio) = {pred['p_podium'].sum():.2f}")
@@ -60,7 +78,7 @@ def main() -> None:
         pd.set_option("display.width", 250)
         table = explain_groups(explain_race(df, race_id), out.set_index("driver_id")["name"], list(out["driver_id"].head(6)))
         print("\nPor qué: efecto de cada grupo de factores sobre las probabilidades de ganar "
-                "(x = multiplica las probabilidades frente a un piloto medio):\n")
+              "(x = multiplica las probabilidades frente a un piloto medio):\n")
         print(table.round(2).to_string(index=False))
 
 
