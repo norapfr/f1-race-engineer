@@ -49,9 +49,9 @@ Entrenando siempre con temporadas anteriores. Referencia: la posición de clasif
 | Azar | 0,197 | 5,06 |
 | Parrilla | 0,112 | 3,54 |
 | Clasificación | 0,109 | 3,48 |
-| Conjunto (logística + LightGBM) | 0,097 | 3,28 |
+| Conjunto (logística + LightGBM) | 0,097 | 3,29 |
 
 - La mejora en **posición final esperada** es robusta (0,1-0,2 puestos, intervalos de confianza por bootstrap fuera del cero, también sin 2023).
 - La mejora en **probabilidad de victoria** se concentra en 2023, un año dominado por un solo coche; sin él no se distingue de la clasificación.
 - Las probabilidades están comprimidas hacia el centro (conservadoras en los extremos); en podio la calibración es buena.
-- Las features de ritmo de carrera ayudan algo a la regresión logística y no a LightGBM.
+- Las features de ritmo de carrera ayudan algo a la probabilidad de victoria de la regresión logística, empeoran ligeramente su posición esperada y no ayudan a LightGBM: no son un avance claro.
