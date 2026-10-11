@@ -21,6 +21,7 @@ def main() -> None:
     ap.add_argument("--quali-file", help="CSV de clasificación escrito a mano (driver_id,position[,q1]); no usa la API")
     ap.add_argument("--circuit", help="circuit_id de la carrera (obligatorio con --quali-file), p. ej. marina_bay")
     ap.add_argument("--why", action="store_true", help="explica los factores de los 6 favoritos")
+    ap.add_argument("--save", action="store_true", help="guarda la predicción en data/predictions/ para evaluarla después")
     a = ap.parse_args()
     con = connect(a.db)
     season = a.season or con.execute("select max(season) from clean.races").fetchone()[0]
@@ -73,6 +74,14 @@ def main() -> None:
     print(out[["name", "equipo", "grid_eff", "p_win", "p_podium", "p_top5", "p_top10", "exp_finish"]]
           .rename(columns={"name": "piloto", "grid_eff": "parrilla"}).to_string(index=False))
     print(f"\nSuma P(win) = {pred['p_win'].sum():.2f}; suma P(podio) = {pred['p_podium'].sum():.2f}")
+    if a.save:
+        from datetime import datetime, timezone
+        from pathlib import Path
+        Path("data/predictions").mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        path = Path("data/predictions") / f"{race_id}_{stamp}.csv"
+        pred.assign(model=REFERENCE_MODEL, created_utc=stamp).to_csv(path, index=False)
+        print(f"\nPredicción guardada en {path}")
     if a.why:
         from models.explain import explain_groups, explain_race
         pd.set_option("display.width", 250)
