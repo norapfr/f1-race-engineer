@@ -11,7 +11,7 @@ optimizador de estrategia → AI Race Engineer. El LLM interpreta resultados de 
 |---|---|---|
 | 1 | Ingestión (Jolpica + FastF1), capas raw/clean en DuckDB, política anti-fuga | hecha |
 | 2 | Features, baselines, modelos de predicción, evaluación temporal | hecha (primera versión) |
-| 3 | Simulador Monte Carlo (distribución de posiciones) | pendiente |
+| 3 | Simulador Monte Carlo (distribución de posiciones) | hecha (primera versión) |
 | 4-8 | Degradación de neumáticos, Strategy Lab, AI Race Engineer, Race Replay, Live | pendiente |
 
 ## Uso (en este orden)
@@ -25,6 +25,8 @@ optimizador de estrategia → AI Race Engineer. El LLM interpreta resultados de 
     python -m pipelines.evaluate_baselines data/f1.duckdb
     python -m pipelines.train_eval data/f1.duckdb                       # modelos, ablación, calibración
     python -m pipelines.predict_race 2026_16                            # probabilidades de una carrera
+    python -m pipelines.predict_upcoming 18 --sim --why --save          # carrera futura, tras la clasificación
+    python -m pipelines.score_prediction 2026_17                       # compara una predicción guardada con el resultado
 
 La descarga de FastF1 es lenta y reanudable (límite de 500 llamadas/hora): si se corta, repite el mismo comando.
 

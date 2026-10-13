@@ -1,5 +1,5 @@
 """Predice una carrera FUTURA a partir de su clasificación ya disputada.
-Uso: python -m pipelines.predict_upcoming 17 [--season 2026] [--grid-file parrilla.csv] [--why] [--db data/f1.duckdb]
+Uso: python -m pipelines.predict_upcoming 17 [--season 2026] [--grid-file parrilla.csv] [--sim] [--why] [--save]
 Sin conexión con la API: python -m pipelines.predict_upcoming 17 --quali-file quali.csv --circuit marina_bay
 (plantilla con: python -m pipelines.quali_template). Antes, actualiza la base con las últimas carreras (ver README)."""
 from __future__ import annotations
@@ -20,6 +20,7 @@ def main() -> None:
     ap.add_argument("--grid-file", help="CSV driver_id,grid con la parrilla real (penalizaciones, pit lane = 0)")
     ap.add_argument("--quali-file", help="CSV de clasificación escrito a mano (driver_id,position[,q1]); no usa la API")
     ap.add_argument("--circuit", help="circuit_id de la carrera (obligatorio con --quali-file), p. ej. marina_bay")
+    ap.add_argument("--sim", action="store_true", help="simula 10.000 carreras: distribución de posiciones e intervalos")
     ap.add_argument("--why", action="store_true", help="explica los factores de los 6 favoritos")
     ap.add_argument("--save", action="store_true", help="guarda la predicción en data/predictions/ para evaluarla después")
     a = ap.parse_args()
@@ -62,6 +63,13 @@ def main() -> None:
         sys.exit(f"{race_id} ya tiene resultados en la base: usa pipelines.predict_race.")
     df = build_features(pd.concat([raw, up], ignore_index=True))
     pred = predict_race(df, race_id)
+    sim = None
+    if a.sim:
+        from simulation.live import RaceSimulator, load_oos
+        hist = df[df["race_id"].isin(raw["race_id"])]
+        classified = raw[["race_id", "driver_id", "classified"]]
+        simulator = RaceSimulator.fit(load_oos(hist), hist, classified)
+        sim = simulator.run(pred, df[df["race_id"] == race_id])
     names = con.execute("select driver_id, name from clean.drivers").df()
     teams = con.execute("select team_id, name as equipo from clean.teams").df()
     out = pred.merge(names, on="driver_id", how="left").merge(teams, on="team_id", how="left")
@@ -74,14 +82,17 @@ def main() -> None:
     print(out[["name", "equipo", "grid_eff", "p_win", "p_podium", "p_top5", "p_top10", "exp_finish"]]
           .rename(columns={"name": "piloto", "grid_eff": "parrilla"}).to_string(index=False))
     print(f"\nSuma P(win) = {pred['p_win'].sum():.2f}; suma P(podio) = {pred['p_podium'].sum():.2f}")
-    if a.save:
-        from datetime import datetime, timezone
-        from pathlib import Path
-        Path("data/predictions").mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        path = Path("data/predictions") / f"{race_id}_{stamp}.csv"
-        pred.assign(model=REFERENCE_MODEL, created_utc=stamp).to_csv(path, index=False)
-        print(f"\nPredicción guardada en {path}")
+    if sim is not None:
+        t = sim.merge(names, on="driver_id", how="left")
+        t["name"] = t["name"].fillna(t["driver_id"])
+        t["50%"] = "P" + t["lo50"].astype(str) + "–P" + t["hi50"].astype(str)
+        t["80%"] = "P" + t["lo80"].astype(str) + "–P" + t["hi80"].astype(str)
+        t[["p_win", "p_podium", "p_dnf"]] = (100 * t[["p_win", "p_podium", "p_dnf"]]).round(1)
+        t["exp_pos"] = t["exp_pos"].round(1)
+        print("\nSimulación de 10.000 carreras (intervalos de la posición final SI el piloto acaba; P(abandono) aparte):\n")
+        print(t[["name", "exp_pos", "50%", "80%", "p_win", "p_podium", "p_dnf"]]
+              .rename(columns={"name": "piloto", "exp_pos": "pos_esperada", "p_dnf": "P(abandono)",
+                               "50%": "50% si acaba", "80%": "80% si acaba"}).to_string(index=False))
     if a.why:
         from models.explain import explain_groups, explain_race
         pd.set_option("display.width", 250)
@@ -89,6 +100,17 @@ def main() -> None:
         print("\nPor qué: efecto de cada grupo de factores sobre las probabilidades de ganar "
               "(x = multiplica las probabilidades frente a un piloto medio):\n")
         print(table.round(2).to_string(index=False))
+    if a.save:
+        from datetime import datetime, timezone
+        from pathlib import Path
+        Path("data/predictions").mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        path = Path("data/predictions") / f"{race_id}_{stamp}.csv"
+        saved = pred if sim is None else pred.merge(sim.drop(columns=["p_win", "p_podium", "p_top5", "p_top10"])
+                                                    .add_prefix("sim_").rename(columns={"sim_driver_id": "driver_id"}),
+                                                    on="driver_id", how="left")
+        saved.assign(model=REFERENCE_MODEL, created_utc=stamp).to_csv(path, index=False)
+        print(f"\nPredicción guardada en {path}")
 
 
 if __name__ == "__main__":
